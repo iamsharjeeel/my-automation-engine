@@ -177,3 +177,30 @@ export default async function handler(req, res) {
   }
   return res.status(200).json({ success: true });
 }
+// ... inside the execution loop for HighLevel ...
+if (step_type === 'highlevel') {
+    // 1. Fetch the connection for this user
+    const { data: conn } = await supabase
+        .from('connections')
+        .eq('app_name', 'highlevel')
+        .single();
+
+    // 2. Use the pit- key if it exists, otherwise use oauth token
+    const token = conn.api_key || conn.access_token;
+
+    if (token) {
+        await axios.post('https://services.leadconnectorhq.com/contacts/', 
+          { 
+            email: parseTemplate(config.email, currentData),
+            firstName: parseTemplate(config.firstName, currentData),
+            source: "AI Integrator App"
+          },
+          { 
+            headers: { 
+                'Authorization': `Bearer ${token}`,
+                'Version': '2021-07-28' // GHL requires a version header
+            } 
+          }
+        );
+    }
+}
