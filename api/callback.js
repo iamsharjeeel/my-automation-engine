@@ -1,9 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import axios from 'axios';
 
-const SB_URL = "https://zfjalcgtytwvmnatwjqr.supabase.co";
-const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpmamFsY2d0eXR3dm1uYXR3anFyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjgxNjE5MywiZXhwIjoyMDkyMzkyMTkzfQ.kNeesQdw9we0doZ4RCTyfViTcILvNETdI517MJHppsQ";
-const supabase = createClient(SB_URL, SB_KEY);
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 export default async function handler(req, res) {
   const { code, state } = req.query; 
@@ -12,10 +10,9 @@ export default async function handler(req, res) {
 
   try {
     // 1. Exchange Code for Token
-    // We use URLSearchParams to ensure the format is exactly what GHL expects
     const params = new URLSearchParams();
-    params.append('client_id', '69e826b405f1a9522b43bdc1-mo9ebr0y');
-    params.append('client_secret', '956f362c-0580-42fe-84b0-837a51e05dab');
+    params.append('client_id', process.env.GHL_CLIENT_ID);
+    params.append('client_secret', process.env.GHL_CLIENT_SECRET);
     params.append('grant_type', 'authorization_code');
     params.append('code', code);
 
@@ -25,10 +22,9 @@ export default async function handler(req, res) {
 
     const { access_token, refresh_token, locationId, expires_in } = response.data;
 
-    // 2. SAVE TO DATABASE
-    // We use a "Upsert" so if you reconnect the same location, it just updates the token
+    // 2. Save to Database (Link to the user via 'state')
     const { error: dbError } = await supabase.from('connections').upsert({
-      user_id: state, // This MUST be your Supabase User UUID
+      user_id: state, 
       app_name: 'highlevel',
       location_id: locationId,
       access_token: access_token,
@@ -36,39 +32,32 @@ export default async function handler(req, res) {
       expires_at: new Date(Date.now() + expires_in * 1000)
     }, { onConflict: 'user_id, location_id' });
 
-    if (dbError) {
-        return res.status(500).send(`Database Error: ${dbError.message}. State Received: ${state}`);
-    }
+    if (dbError) throw new Error(dbError.message);
 
-    res.send("<h1>Success!</h1><p>Location connected. You can close this tab.</p>");
+    // 3. Branded Success UI with Auto-Close
+    res.send(`
+      <html>
+        <head>
+          <script src="https://cdn.tailwindcss.com"></script>
+          <script>
+            setTimeout(() => {
+              if (window.opener) { window.opener.postMessage("ghl-connection-success", "*"); }
+              window.close();
+            }, 3000);
+          </script>
+        </head>
+        <body class="bg-slate-900 text-white flex items-center justify-center h-screen font-sans">
+          <div class="text-center p-8 bg-slate-800 rounded-2xl border border-slate-700 shadow-2xl">
+            <div class="mb-4 text-green-400 text-5xl">✓</div>
+            <h1 class="text-2xl font-bold mb-2">HighLevel Connected!</h1>
+            <p class="text-slate-400">Location ID: <span class="text-indigo-400 font-mono text-sm">${locationId}</span></p>
+            <p class="mt-6 text-xs text-slate-500 italic text-center">Closing in 3 seconds...</p>
+          </div>
+        </body>
+      </html>
+    `);
 
   } catch (err) {
-    const errorData = err.response?.data || err.message;
-    res.status(500).json({ 
-        message: "OAuth Exchange Failed", 
-        detail: errorData,
-        sent_code: code 
-    });
+    res.status(500).json({ error: "OAuth Failed", detail: err.response?.data || err.message });
   }
 }
-// ... (keep the same imports and token exchange logic as before) ...
-
-    if (dbError) {
-        return res.status(500).send(`Database Error: ${dbError.message}`);
-    }
-
-    // NEW: Instead of just text, send a script to close the window and notify the opener
-    res.send(`
-      <script>
-        if (window.opener) {
-          // Send a message back to your AI Studio app
-          window.opener.postMessage("ghl-connection-success", "*");
-        }
-        window.close();
-      </script>
-      <div style="font-family:sans-serif; text-align:center; margin-top:50px;">
-        <h1>Connected!</h1>
-        <p>This window will close automatically...</p>
-      </div>
-    `);
-// ... (rest of the error handling) ...
