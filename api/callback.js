@@ -51,3 +51,24 @@ export default async function handler(req, res) {
     });
   }
 }
+// ... (keep the same imports and token exchange logic as before) ...
+
+    if (dbError) {
+        return res.status(500).send(`Database Error: ${dbError.message}`);
+    }
+
+    // NEW: Instead of just text, send a script to close the window and notify the opener
+    res.send(`
+      <script>
+        if (window.opener) {
+          // Send a message back to your AI Studio app
+          window.opener.postMessage("ghl-connection-success", "*");
+        }
+        window.close();
+      </script>
+      <div style="font-family:sans-serif; text-align:center; margin-top:50px;">
+        <h1>Connected!</h1>
+        <p>This window will close automatically...</p>
+      </div>
+    `);
+// ... (rest of the error handling) ...
